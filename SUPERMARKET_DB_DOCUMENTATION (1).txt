@@ -1,0 +1,467 @@
+# Supermarket Database Documentation
+
+This document explains **every step** of the Supermarket SQL script (`Supermarket.sql`) for setting up, populating, and managing the database for a supermarket management system.
+
+---
+
+## Table of Contents
+
+1. [Database Setup](#database-setup)
+2. [Table Creation](#table-creation)
+    - [Categories](#categories)
+    - [Supplier](#supplier)
+    - [Products](#products)
+    - [Employees](#employees)
+    - [Customers](#customers)
+    - [SalesTransactions](#salestransactions)
+    - [SalesTransactionItems](#salestransactionitems)
+    - [PurchaseOrders](#purchaseorders)
+    - [PrchaseOrderItems](#prchaseorderitems)
+3. [Sample Data Insertion](#sample-data-insertion)
+4. [Stored Procedures](#stored-procedures)
+    - [InsertSampleTransaction](#insertsampletransaction)
+    - [InsertSamplePurchaseOrders](#insertsamplepurchaseorders)
+    - [InsertSampleSalesTransactionItems](#insertsamplesalestransactionitems)
+    - [InsertSamplePurchaseOrderItems](#insertsamplepurchaseorderitems)
+5. [Views](#views)
+    - [Sales Summary](#sales-summary)
+    - [Product Stock Level](#product-stock-level)
+    - [DailySalesSummary](#dailysalessummary)
+    - [Detailed Sales Summary](#detailed-sales-summary)
+    - [Supplier Product Catalog](#supplier-product-catalog)
+    - [Employee Sales Performances](#employee-sales-performances)
+    - [Low Stock Products](#low-stock-products)
+
+---
+
+## Database Setup
+
+**Step 1:**  
+- Drop the existing `SupermarketeDb` database if it exists.
+- Create a new database called `SupermarketeDb`.
+- Switch to the new database for all further operations.
+
+**Commands:**
+```sql
+USE master;
+IF EXISTS (SELECT name FROM sys.databases WHERE name = 'SupermarketeDb')
+BEGIN
+    PRINT 'DROPING THE DATABASE SupermarketeDb';
+    ALTER DATABASE SupermarketeDb SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE SupermarketeDb;
+END
+GO
+
+CREATE DATABASE SupermarketeDb;
+GO
+
+USE SupermarketeDb;
+GO
+```
+
+---
+
+## Table Creation
+
+### Categories
+
+**Stores product categories.**
+
+```sql
+CREATE TABLE Categories(
+    CategoryId INT PRIMARY KEY IDENTITY(1,1),
+    CategoryName VARCHAR(50) NOT NULL UNIQUE,
+    Description_ VARCHAR(200)
+);
+```
+
+---
+
+### Supplier
+
+**Stores supplier/vendor information.**
+
+```sql
+CREATE TABLE Supplier(
+    SupplierId INT PRIMARY KEY IDENTITY(1,1),
+    SupplierName VARCHAR(50) NOT NULL UNIQUE,
+    ContactPerson VARCHAR(30),
+    PhoneNumber VARCHAR(20),
+    Email VARCHAR(50),
+    Address VARCHAR(255)
+);
+```
+
+---
+
+### Products
+
+**Stores product/item details, linked to Category and Supplier.**
+
+```sql
+CREATE TABLE Products(
+    ProductId INT PRIMARY KEY IDENTITY(1,1),
+    ProductName VARCHAR(50) NOT NULL,
+    PDescription VARCHAR(200),
+    SKU VARCHAR(20) UNIQUE,
+    CategoryId INT NOT NULL,
+    SupplierID INT NOT NULL,
+    UnitPrice DECIMAL NOT NULL CHECK(UnitPrice>=0),
+    CostPrice DECIMAL NOT NULL CHECK(CostPrice>=0),
+    QuantityInStock INT NOT NULL CHECK(QuantityInStock>=0),
+    MinimumStockLevel INT DEFAULT 5 CHECK(MinimumStockLevel>=0),
+    IsActive BIT DEFAULT 1,
+    ImageUrl VARCHAR(255),
+    BarCoad VARCHAR(100),
+    FOREIGN KEY (CategoryId) REFERENCES Categories (CategoryId),
+    FOREIGN KEY (SupplierId) REFERENCES Supplier(SupplierId)
+);
+```
+
+---
+
+### Employees
+
+**Stores employee details.**
+
+```sql
+CREATE TABLE Employees(
+    EmployeeID INT PRIMARY KEY IDENTITY(1,1),
+    FirstName VARCHAR(50) NOT NULL,
+    LastName VARCHAR(50) NOT NULL,
+    Role VARCHAR(50),
+    PhoneNumber VARCHAR(50),
+    Email VARCHAR(50),
+    Address VARCHAR(255),
+    HireDate DATE NOT NULL DEFAULT GETDATE()
+);
+```
+
+---
+
+### Customers
+
+**Stores customer details and reward points.**
+
+```sql
+CREATE TABLE Customers(
+    CustomerID INT PRIMARY KEY IDENTITY(1,1),
+    FirstName VARCHAR(50) NOT NULL,
+    LastName VARCHAR(50) NOT NULL,
+    PhoneNumber VARCHAR(50),
+    Email VARCHAR(50),
+    Address VARCHAR(255),
+    RewardPoints INT DEFAULT 0 CHECK(RewardPoints >=0)
+);
+```
+
+---
+
+### SalesTransactions
+
+**Stores sales transaction records.**
+
+```sql
+CREATE TABLE SalesTransactions(
+    TransactionID INT PRIMARY KEY IDENTITY(1,1),
+    CustomerID INT,
+    EmployeeID INT NOT NULL,
+    TransactionDateTime DATETIME NOT NULL DEFAULT GETDATE(),
+    TotalAmount DECIMAL(10,2) NOT NULL CHECK(TotalAmount>=0),
+    DiscountAmount DECIMAL(10,2) NOT NULL CHECK(DiscountAmount>=0),
+    PaymentMethod VARCHAR(50) NOT NULL,
+    Status VARCHAR(25) NOT NULL DEFAULT 'Completed',
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID),
+    FOREIGN KEY (EmployeeID) REFERENCES Employees(EmployeeID)
+);
+```
+
+---
+
+### SalesTransactionItems
+
+**Stores items within each sales transaction.**
+
+```sql
+CREATE TABLE SalesTransactionItems(
+    TransactionItemID INT PRIMARY KEY IDENTITY(1,1),
+    TransactionID INT NOT NULL,
+    ProductID INT NOT NULL,
+    Qty INT NOT NULL CHECK(Qty>0),
+    UnitPriceAtSale DECIMAL(10,2) NOT NULL CHECK(UnitPriceAtSale >=0),
+    LineTotal DECIMAL(10,2) NOT NULL CHECK(LineTotal >=0),
+    FOREIGN KEY (TransactionID) REFERENCES SalesTransactions(TransactionID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+```
+
+---
+
+### PurchaseOrders
+
+**Stores inventory purchase orders to suppliers.**
+
+```sql
+CREATE TABLE PurchaseOrders(
+    PurchaseOrderID INT PRIMARY KEY IDENTITY(1,1),
+    SupplierID INT NOT NULL,
+    OrderDate DATE NOT NULL DEFAULT GETDATE(),
+    ExpectedDeliveryDate DATE,
+    ActualDeliveryDate DATE,
+    TotalCost DECIMAL(10,2) NOT NULL CHECK(TotalCost >=0),
+    Status VARCHAR(25) NOT NULL DEFAULT 'Pending',
+    FOREIGN KEY (SupplierID) REFERENCES Supplier(SupplierID)
+);
+```
+
+---
+
+### PrchaseOrderItems
+
+**Stores items within each purchase order.**
+
+```sql
+CREATE TABLE PrchaseOrderItems(
+    PurchaseOrderItemID INT PRIMARY KEY IDENTITY(1,1),
+    PurchaseOrderID INT NOT NULL,
+    ProductID INT NOT NULL,
+    QtyOrder INT NOT NULL CHECK(QtyOrder >=0),
+    UnitCost DECIMAL(10,2) NOT NULL CHECK(UnitCost >=0),
+    LineTotal DECIMAL(10,2) NOT NULL CHECK(LineTotal >=0),
+    QtyReceived INT DEFAULT 0 CHECK(QtyReceived >=0),
+    FOREIGN KEY (PurchaseOrderID) REFERENCES PurchaseOrders(PurchaseOrderID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+);
+```
+
+---
+
+## Sample Data Insertion
+
+**Step:**  
+Insert sample data into each table for realistic demo/testing.
+
+```sql
+INSERT INTO Categories (CategoryName, Description_) VALUES 
+('Atta & Flour', 'Wheat flour, multigrain flour, besan, and other Indian flours'),
+('Rice & Grains', 'Basmati rice, dal, rajma, chana, and pulses'),
+...
+```
+*Similar sample data inserted for Supplier, Products, Employees, Customers.*
+
+---
+
+## Stored Procedures
+
+### InsertSampleTransaction
+
+**Populates the SalesTransactions table with 1000 random transactions.**  
+- Randomly selects Customer and Employee.
+- Generates random dates, amounts, and payment methods.
+
+```sql
+CREATE PROCEDURE InsertSampleTransaction AS
+BEGIN
+    ...
+    WHILE @i < 1000
+    BEGIN
+        -- Select random CustomerID, EmployeeID, generate random date/amount/payment
+        INSERT INTO SalesTransactions (...)
+    END
+    ...
+END
+```
+
+---
+
+### InsertSamplePurchaseOrders
+
+**Populates PurchaseOrders table with 500 random purchase orders.**  
+- Randomly assigns supplier, dates, costs, and status.
+
+```sql
+CREATE PROCEDURE InsertSamplePurchaseOrders AS
+BEGIN
+    ...
+    WHILE @i < 500
+    BEGIN
+        -- Insert random PurchaseOrder
+    END
+    ...
+END
+```
+
+---
+
+### InsertSampleSalesTransactionItems
+
+**Populates SalesTransactionItems table for each transaction.**  
+- Uses a cursor to loop through transactions.
+- Adds random items, calculates totals/discounts based on payment method.
+
+```sql
+CREATE PROCEDURE InsertSampleSalesTransactionItems AS
+BEGIN
+    ...
+    DECLARE Trans_CursorName CURSOR FOR SELECT TransactionID, PaymentMethod FROM SalesTransactions;
+    ...
+END
+```
+
+---
+
+### InsertSamplePurchaseOrderItems
+
+**Populates PrchaseOrderItems table for each purchase order.**  
+- Uses a cursor to loop through purchase orders.
+- Adds random products, calculates totals, assigns status and delivery dates.
+
+```sql
+CREATE PROCEDURE InsertSamplePurchaseOrderItems AS
+BEGIN
+    ...
+    DECLARE OrderCursor CURSOR FOR SELECT PurchaseOrderID FROM PurchaseOrders;
+    ...
+END
+```
+
+---
+
+## Views
+
+### Sales Summary
+
+**Consolidates sales transactions with customer and employee details.**
+
+```sql
+CREATE VIEW [Sales Summary] AS
+SELECT
+    ST.TransactionID, ST.TransactionDateTime, ST.TotalAmount, ST.DiscountAmount, ST.PaymentMethod, ST.Status,
+    C.FirstName + ' ' + C.LastName AS [Customer Full Name],
+    E.FirstName + ' ' + E.LastName AS [Employee Full Name]
+FROM SalesTransactions ST
+JOIN Customers C ON C.CustomerID = ST.CustomerID
+JOIN Employees E ON E.EmployeeID = ST.EmployeeID
+```
+
+---
+
+### Product Stock Level
+
+**Displays stock status for all active products, with category and supplier info.**
+
+```sql
+CREATE VIEW [Product Stock Level] AS
+SELECT 
+    P.ProductId, P.ProductName, P.MinimumStockLevel, P.QuantityInStock,
+    C.CategoryId, C.CategoryName,
+    S.SupplierId, S.SupplierName
+FROM Products P
+JOIN Categories C ON C.CategoryId = P.CategoryId
+JOIN Supplier S ON S.SupplierId = P.SupplierID
+```
+
+---
+
+### DailySalesSummary
+
+**Provides daily aggregated sales metrics (counts, totals, discounts, averages).**
+
+```sql
+CREATE VIEW DailySalesSummary AS
+SELECT 
+    COUNT(TransactionID) AS [Counts], SUM(TotalAmount) AS [Total], SUM(DiscountAmount) AS [Discounts],
+    AVG(TotalAmount) AS [AVG Sales Values], CAST(TransactionDateTime AS DATE) AS [Transaction DATE], Status
+FROM SalesTransactions
+WHERE Status = 'Completed'
+GROUP BY TransactionDateTime, Status
+```
+
+---
+
+### Detailed Sales Summary
+
+**Displays detailed info for each sales transaction item (products, customer, employee).**
+
+```sql
+CREATE VIEW [Detailed Sales Summary] AS
+SELECT 
+    E.EmployeeID, E.FirstName + ' ' + E.LastName AS [EMP FULLNAME],
+    C.CustomerID, C.FirstName + ' ' + C.LastName AS [CUS FULLNAME],
+    P.ProductId, P.ProductName, P.CategoryId, P.UnitPrice, P.CostPrice,
+    STI.TransactionID, STI.TransactionItemID, STI.UnitPriceAtSale, STI.LineTotal,
+    CAST(ST.TransactionDateTime AS DATE) AS SalesDATE, ST.TotalAmount, ST.DiscountAmount, ST.PaymentMethod
+FROM SalesTransactionItems STI
+JOIN SalesTransactions ST ON STI.TransactionID = ST.TransactionID
+JOIN Products P ON P.ProductId = STI.ProductID
+JOIN Employees E ON E.EmployeeID = ST.EmployeeID
+LEFT JOIN Customers C ON C.CustomerID = ST.CustomerID
+```
+
+---
+
+### Supplier Product Catalog
+
+**Lists all active products with supplier and category details.**
+
+```sql
+CREATE VIEW [Supplier Product Catalog] AS
+SELECT 
+    S.SupplierId, S.SupplierName,
+    P.ProductId, P.ProductName, P.SKU, P.QuantityInStock, P.UnitPrice, P.CostPrice, P.IsActive,
+    C.CategoryId, C.CategoryName
+FROM Supplier S
+JOIN Products P ON S.SupplierId = P.SupplierID
+JOIN Categories C ON C.CategoryId = P.CategoryId
+WHERE P.IsActive = 1
+```
+
+---
+
+### Employee Sales Performances
+
+**Tracks individual employee sales performance (number of transactions processed).**
+
+```sql
+CREATE VIEW [Employee Sales Performances] AS
+SELECT 
+    E.EmployeeID, E.FirstName + ' ' + E.LastName AS [EMP NAME], E.Role, COUNT(S.TransactionID) AS [Total Transactions]
+FROM Employees E
+JOIN SalesTransactions S ON E.EmployeeID = S.EmployeeID
+GROUP BY E.EmployeeID, E.FirstName, E.LastName, E.Role
+```
+
+---
+
+### Low Stock Products
+
+**Highlights products that need restocking by comparing inventory against minimum stock level.**
+
+```sql
+CREATE VIEW [Low Stock Products] AS
+SELECT
+    P.ProductId,
+    P.ProductName,
+    P.QuantityInStock,
+    P.MinimumStockLevel,
+    S.SupplierName,
+    C.CategoryName
+FROM Products P
+JOIN Supplier S ON S.SupplierId = P.SupplierID
+JOIN Categories C ON C.CategoryId = P.CategoryId
+WHERE P.QuantityInStock <= P.MinimumStockLevel
+```
+
+---
+
+# Summary
+
+This documentation covers:
+- **Database setup & table creation**
+- **Sample data population**
+- **Stored procedures for bulk/random data generation**
+- **Views for reporting, dashboards, analytics**
+
+You can use this as a reference to understand, modify, or extend your supermarket database.  
+For further details on any step or code section, refer directly to the `Supermarket.sql` file or ask for specific clarifications!
+
